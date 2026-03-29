@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String?
+  name      String
+  avatar    String?
+  googleId  String?   @unique
+  role      String    @default("publisher")
+  createdAt DateTime  @default(now())
+  lastLogin DateTime?
+  clients   Client[]  @relation("PublisherClients")
+
+  @@index([email])
+  @@index([role])
+}
+
+model Client {
+  id            String   @id @default(cuid())
+  name          String
+  email         String
+  bookTitle     String
+  sport         String   @default("baseball")
+  uniqueLink    String   @unique
+  messages      Json?
+  bookDraft     String?  @db.Text
+  voiceProfile  Json?
+  bookOutline   Json?
+  marketingKit  Json?
+  qualityScore  Int      @default(0)
+  sentimentData Json?
+  wordCount     Int      @default(0)
+  progress      Int      @default(0)
+  status        String   @default("pending")
+  athleteRoute  String   @default("general")
+  language      String   @default("en")
+  lastActive    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  publisherId   String
+  publisher     User     @relation("PublisherClients", fields: [publisherId], references: [id])
+  comments      Comment[]
+  chapterDrafts ChapterDraft[]
+
+  @@index([publisherId])
+  @@index([status])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  clientId   String
+  userId     String
+  content    String
+  type       String   @default("note")
+  chapterNum Int?
+  createdAt  DateTime @default(now())
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+model ChapterDraft {
+  id           String   @id @default(cuid())
+  clientId     String
+  chapterNum   Int
+  title        String
+  content      String?  @db.Text
+  qualityScore Int      @default(0)
+  status       String   @default("draft")
+  wordCount    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, chapterNum])
+  @@index([clientId])
+}
