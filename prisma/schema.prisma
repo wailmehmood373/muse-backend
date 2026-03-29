@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = "file:./muse.db"
 }
 
 model User {
@@ -31,13 +30,13 @@ model Client {
   bookTitle     String
   sport         String   @default("baseball")
   uniqueLink    String   @unique
-  messages      Json?
-  bookDraft     String?  @db.Text
-  voiceProfile  Json?
-  bookOutline   Json?
-  marketingKit  Json?
+  messages      String?
+  bookDraft     String?
+  voiceProfile  String?
+  bookOutline   String?
+  marketingKit  String?
   qualityScore  Int      @default(0)
-  sentimentData Json?
+  sentimentData String?
   wordCount     Int      @default(0)
   progress      Int      @default(0)
   status        String   @default("pending")
@@ -73,7 +72,7 @@ model ChapterDraft {
   clientId     String
   chapterNum   Int
   title        String
-  content      String?  @db.Text
+  content      String?
   qualityScore Int      @default(0)
   status       String   @default("draft")
   wordCount    Int      @default(0)
