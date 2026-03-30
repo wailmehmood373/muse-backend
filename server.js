@@ -179,17 +179,15 @@ app.get('/api/auth/verify', authMiddleware, async (req, res) => {
 
 app.post('/api/auth/logout', authMiddleware, (_req, res) => res.json({ message: 'Logged out' }));
 
-// ─── Forgot Password ───────────────────────────────────────────────────────────
+// ─── Forgot Password — returns reset link directly (no email needed) ──────────
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
 
     const user = await prisma.user.findUnique({ where: { email } });
-    // Always return success (don't reveal if email exists)
-    if (!user) return res.json({ message: 'If this email exists, a reset link has been sent.' });
+    if (!user) return res.status(404).json({ error: 'No account found with this email' });
 
-    // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenExp = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
@@ -198,35 +196,13 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       data: { resetToken, resetTokenExp },
     });
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    const frontendUrl = process.env.FRONTEND_URL || 'https://muse-frontend-seven.vercel.app';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    // Send email via Resend
-    if (process.env.RESEND_API_KEY) {
-      await resend.emails.send({
-        from: 'Muse Pro <onboarding@resend.dev>',
-        to: email,
-        subject: 'Reset your Muse Pro password',
-        html: `
-          <div style="font-family: Inter, sans-serif; max-width: 500px; margin: 0 auto; padding: 40px 20px;">
-            <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 30px;">
-              <h1 style="color: white; margin: 0; font-size: 24px;">Muse Pro</h1>
-            </div>
-            <h2 style="color: #111827;">Reset Your Password</h2>
-            <p style="color: #6b7280;">Hi ${user.name},</p>
-            <p style="color: #6b7280;">Click the button below to reset your password. This link expires in 1 hour.</p>
-            <a href="${resetUrl}" style="display: inline-block; background: linear-gradient(135deg, #6366f1, #a855f7); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 20px 0;">
-              Reset Password
-            </a>
-            <p style="color: #9ca3af; font-size: 12px;">If you didn't request this, ignore this email.</p>
-          </div>
-        `,
-      });
-    }
-
-    res.json({ message: 'If this email exists, a reset link has been sent.' });
+    res.json({ resetLink, message: 'Copy this link to reset your password. Valid for 1 hour.' });
   } catch (err) {
     console.error('Forgot password:', err);
-    res.status(500).json({ error: 'Failed to send reset email' });
+    res.status(500).json({ error: 'Failed to generate reset link' });
   }
 });
 
