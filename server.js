@@ -8,11 +8,14 @@ const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const Groq = require('groq-sdk');
 const crypto = require('crypto');
+const { Resend } = require('resend');
 
 // ── Services ───────────────────────────────────────────────────────────────────
 const { generateOutline, ATHLETE_ROUTES } = require('./services/outlineGenerator');
 const { detectTriggers, getFollowUpQuestion, analyzeSentiment, calculateEngagement } = require('./services/deepDiveDetector');
 const { polishBook, generateMarketingKit, scoreChapterQuality } = require('./services/bookEditor');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 const { buildSentimentTimeline, calculateQualityScore } = require('./services/sentimentAnalyzer');
 
 const app = express();
@@ -175,6 +178,89 @@ app.get('/api/auth/verify', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/auth/logout', authMiddleware, (_req, res) => res.json({ message: 'Logged out' }));
+
+// ─── Forgot Password ───────────────────────────────────────────────────────────
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    // Always return success (don't reveal if email exists)
+    if (!user) return res.json({ message: 'If this email exists, a reset link has been sent.' });
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExp = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.user.update({
+      where: { email },
+      data: { resetToken, resetTokenExp },
+    });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+    // Send email via Resend
+    if (process.env.RESEND_API_KEY) {
+      await resend.emails.send({
+        from: 'Muse Pro <noreply@musepro.app>',
+        to: email,
+        subject: 'Reset your Muse Pro password',
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 500px; margin: 0 auto; padding: 40px 20px;">
+            <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 30px;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">Muse Pro</h1>
+            </div>
+            <h2 style="color: #111827;">Reset Your Password</h2>
+            <p style="color: #6b7280;">Hi ${user.name},</p>
+            <p style="color: #6b7280;">Click the button below to reset your password. This link expires in 1 hour.</p>
+            <a href="${resetUrl}" style="display: inline-block; background: linear-gradient(135deg, #6366f1, #a855f7); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 20px 0;">
+              Reset Password
+            </a>
+            <p style="color: #9ca3af; font-size: 12px;">If you didn't request this, ignore this email.</p>
+          </div>
+        `,
+      });
+    }
+
+    res.json({ message: 'If this email exists, a reset link has been sent.' });
+  } catch (err) {
+    console.error('Forgot password:', err);
+    res.status(500).json({ error: 'Failed to send reset email' });
+  }
+});
+
+// ─── Reset Password ────────────────────────────────────────────────────────────
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ error: 'Token and password required' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password min 6 characters' });
+
+    const user = await prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExp: { gt: new Date() },
+      },
+    });
+
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: await bcrypt.hash(password, 12),
+        resetToken: null,
+        resetTokenExp: null,
+      },
+    });
+
+    res.json({ message: 'Password reset successfully. You can now login.' });
+  } catch (err) {
+    console.error('Reset password:', err);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
 
 // ─── Helper: name-based unique link ───────────────────────────────────────────
 function makeUniqueLink(name) {
