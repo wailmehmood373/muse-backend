@@ -203,7 +203,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     // Send email via Resend
     if (process.env.RESEND_API_KEY) {
       await resend.emails.send({
-        from: 'Muse Pro <noreply@musepro.app>',
+        from: 'Muse Pro <onboarding@resend.dev>',
         to: email,
         subject: 'Reset your Muse Pro password',
         html: `
